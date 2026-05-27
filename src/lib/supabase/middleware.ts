@@ -9,7 +9,12 @@ import { NextResponse, type NextRequest } from "next/server";
  * from /login and surface as "Unexpected end of JSON input" on the client.
  */
 
-const PUBLIC_PATHS = ["/login", "/verify", "/auth/callback"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/verify",
+  "/auth/callback",
+  "/api/auth", // route handlers used during sign-in
+];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
