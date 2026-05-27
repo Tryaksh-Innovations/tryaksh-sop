@@ -6,6 +6,7 @@ import {
   BookOpen,
   ScrollText,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import {
@@ -31,7 +32,10 @@ const NAV_SECTIONS: {
   {
     marker: "§ 02",
     label: "Reference",
-    items: [{ href: "/handbook", label: "Handbook", icon: BookOpen }],
+    items: [
+      { href: "/handbook", label: "Handbook", icon: BookOpen },
+      { href: "/demo", label: "Platform tour", icon: Sparkles },
+    ],
   },
   {
     marker: "§ 03",
