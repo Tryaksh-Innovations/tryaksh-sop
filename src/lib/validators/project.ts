@@ -31,3 +31,10 @@ export const updateProjectStatusSchema = z.object({
 });
 
 export type UpdateProjectStatusInput = z.infer<typeof updateProjectStatusSchema>;
+
+export const deleteProjectSchema = z.object({
+  projectId: z.string().uuid(),
+  typedCode: z.string().trim().min(1, "Type the project code to confirm"),
+});
+
+export type DeleteProjectInput = z.infer<typeof deleteProjectSchema>;

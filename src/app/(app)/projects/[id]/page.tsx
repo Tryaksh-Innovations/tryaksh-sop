@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StageStepper } from "@/components/projects/stage-stepper";
 import { ProjectStatusMenu } from "@/components/projects/status-menu";
+import { DeleteProjectDialog } from "@/components/projects/delete-project-dialog";
 import {
   getProjectById,
   getProjectStepperRows,
@@ -239,6 +240,21 @@ export default async function ProjectDetailPage({
           </CardContent>
         </Card>
       </section>
+
+      {/* ── Danger zone (CEO only) ───────────────────────────── */}
+      {user.role === "ceo" && (
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <h2 className="font-display text-[20px] text-ink">Administration</h2>
+            <span className="section-mark">§ X</span>
+          </div>
+          <DeleteProjectDialog
+            projectId={project.id}
+            projectCode={project.code}
+            projectName={project.name}
+          />
+        </section>
+      )}
     </div>
   );
 }

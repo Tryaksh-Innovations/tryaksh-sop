@@ -3,8 +3,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 
 import { db } from "@/db";
 import {
@@ -12,12 +13,17 @@ import {
   workflows,
   workflowStages,
   projectStageRuns,
+  checklistResponses,
+  externalLinks,
+  approvals,
+  auditLog,
   users,
 } from "@/db/schema";
 import { writeAuditLog } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import {
   createProjectSchema,
+  deleteProjectSchema,
   type CreateProjectInput,
 } from "@/lib/validators/project";
 import { requireRole } from "@/server/auth";
@@ -286,5 +292,139 @@ export async function setProjectStatus(
   revalidatePath(`/projects/${project.id}`);
   revalidatePath("/projects");
   revalidatePath("/");
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Hard-delete a project (CEO only, with typed-code confirmation)
+// ─────────────────────────────────────────────────────────────────
+
+export type DeleteProjectResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function deleteProject(
+  raw: unknown
+): Promise<DeleteProjectResult> {
+  const actor = await requireRole("ceo");
+  const parsed = deleteProjectSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input.",
+    };
+  }
+  const { projectId, typedCode } = parsed.data;
+
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) return { ok: false, error: "Project not found." };
+
+  if (typedCode.trim() !== project.code) {
+    return {
+      ok: false,
+      error: `Typed code does not match. Type the project code "${project.code}" exactly to confirm.`,
+    };
+  }
+
+  // Gather IDs of related rows so we can clean up audit log entries too.
+  const stageRunRows = await db
+    .select({ id: projectStageRuns.id })
+    .from(projectStageRuns)
+    .where(eq(projectStageRuns.projectId, projectId));
+  const stageRunIds = stageRunRows.map((r) => r.id);
+
+  let externalLinkIds: string[] = [];
+  if (stageRunIds.length > 0) {
+    const linkRows = await db
+      .select({ id: externalLinks.id })
+      .from(externalLinks)
+      .where(inArray(externalLinks.stageRunId, stageRunIds));
+    externalLinkIds = linkRows.map((l) => l.id);
+  }
+
+  // Read context for the audit entry
+  const h = await headers();
+  const ipAddress =
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    h.get("x-real-ip") ??
+    undefined;
+  const userAgent = h.get("user-agent") ?? undefined;
+
+  // Write a permanent audit entry BEFORE deleting. Use a distinct
+  // entityType so it survives the audit-cleanup step below.
+  const auditOpId = randomUUID();
+  await writeAuditLog({
+    actorId: actor.id,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+    action: "project_archived",
+    entityType: "project_hard_delete",
+    entityId: auditOpId,
+    afterJson: {
+      deletedProjectId: project.id,
+      code: project.code,
+      name: project.name,
+      designClass: project.designClass,
+      designerId: project.designerId,
+      status: project.status,
+      stageRunCount: stageRunIds.length,
+      externalLinkCount: externalLinkIds.length,
+    },
+    ipAddress,
+    userAgent,
+  });
+
+  // Delete children, then the project itself.
+  try {
+    if (stageRunIds.length > 0) {
+      await db
+        .delete(checklistResponses)
+        .where(inArray(checklistResponses.stageRunId, stageRunIds));
+      await db
+        .delete(approvals)
+        .where(inArray(approvals.stageRunId, stageRunIds));
+      await db
+        .delete(externalLinks)
+        .where(inArray(externalLinks.stageRunId, stageRunIds));
+    }
+    await db
+      .delete(projectStageRuns)
+      .where(eq(projectStageRuns.projectId, projectId));
+
+    // Sweep audit_log entries for entities we just deleted, so the global
+    // audit isn't littered with references to phantom rows.
+    const relatedIds = [project.id, ...stageRunIds, ...externalLinkIds];
+    if (relatedIds.length > 0) {
+      await db
+        .delete(auditLog)
+        .where(
+          and(
+            inArray(auditLog.entityId, relatedIds),
+            inArray(auditLog.entityType, [
+              "projects",
+              "project_stage_runs",
+              "external_links",
+              "checklist_responses",
+            ])
+          )
+        );
+    }
+
+    await db.delete(projects).where(eq(projects.id, projectId));
+  } catch (err) {
+    logger.error("deleteProject failed mid-way", err, { projectId });
+    return {
+      ok: false,
+      error: "Delete partially failed. Check Vercel function logs.",
+    };
+  }
+
+  revalidatePath("/projects");
+  revalidatePath("/");
+  revalidatePath("/audit");
   return { ok: true };
 }
