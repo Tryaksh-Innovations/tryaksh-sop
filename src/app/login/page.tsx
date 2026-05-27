@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { requestMagicLink } from "@/server/actions/auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,44 +15,44 @@ export default function LoginPage() {
     setStatus("loading");
     setErrorMessage("");
 
+    // Plain JSON POST to a route handler — no server-action machinery.
+    // If the response isn't JSON-parseable (e.g. an HTML error page got
+    // served), the catch block surfaces a clear retry message.
     try {
-      const result = await requestMagicLink(email);
-      if (result.ok) {
-        setStatus("sent");
-      } else {
-        setStatus("error");
-        setErrorMessage(result.error);
-      }
-    } catch (err) {
-      setStatus("error");
-      const msg = err instanceof Error ? err.message : String(err);
+      const res = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+        cache: "no-store",
+      });
 
-      // Stale-deploy action ID mismatch. The page HTML in the browser is from
-      // an earlier deploy and references an action ID the current server no
-      // longer recognizes. Force a hard refresh to pull the latest bundle.
-      const looksLikeStaleDeploy =
-        /server action not found|unrecognized.*action|unexpected token.*doctype|action id/i.test(
-          msg
+      let payload: { ok?: boolean; error?: string } = {};
+      try {
+        payload = await res.json();
+      } catch {
+        throw new Error(
+          `Server returned ${res.status} with a non-JSON body. The page may be out of date.`
         );
-      if (looksLikeStaleDeploy) {
-        setErrorMessage(
-          "This page is out of date. Refreshing to load the latest version…"
-        );
-        // Give the user a beat to read the message, then force a no-cache reload.
-        setTimeout(() => {
-          window.location.href = `/login?v=${Date.now()}`;
-        }, 1200);
+      }
+
+      if (res.ok && payload.ok) {
+        setStatus("sent");
         return;
       }
 
-      // Server action transport-level failures (timeouts, edge function
-      // crashes) — usually Supabase cold start; a retry succeeds.
+      setStatus("error");
+      setErrorMessage(
+        payload.error ?? `Request failed (HTTP ${res.status}).`
+      );
+    } catch (err) {
+      setStatus("error");
+      const msg = err instanceof Error ? err.message : String(err);
       const looksLikeColdStart =
-        /unexpected end of json|fetch|network|timeout/i.test(msg);
+        /unexpected end of json|fetch|network|timeout|503|502/i.test(msg);
       setErrorMessage(
         looksLikeColdStart
           ? "The auth service is waking up. Please wait a few seconds and try again."
-          : `Something went wrong: ${msg}`
+          : msg
       );
     }
   }
