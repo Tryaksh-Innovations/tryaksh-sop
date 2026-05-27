@@ -77,8 +77,23 @@ export async function POST(request: Request) {
       logger.error("Supabase signInWithOtp failed", {
         email: normalized,
         error: error.message,
+        status: (error as { status?: number }).status,
       });
-      return json(502, { ok: false, error: error.message });
+
+      // Translate cryptic Supabase errors into actionable messages.
+      const msg = error.message;
+      let friendly = msg;
+      if (/unexpected token.*doctype|html/i.test(msg)) {
+        friendly =
+          "Supabase auth service is unreachable or rate-limiting. Wait a minute and try again; if it persists, check the Supabase dashboard for project status.";
+      } else if (/rate limit|too many requests|429/i.test(msg)) {
+        friendly =
+          "Too many sign-in requests for this email. Wait a few minutes and try again.";
+      } else if (/email.*invalid|invalid.*email/i.test(msg)) {
+        friendly = "That email address is not valid.";
+      }
+
+      return json(502, { ok: false, error: friendly });
     }
 
     return json(200, { ok: true });
