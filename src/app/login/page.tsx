@@ -5,9 +5,8 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">(
-    "idle"
-  );
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -15,14 +14,11 @@ export default function LoginPage() {
     setStatus("loading");
     setErrorMessage("");
 
-    // Plain JSON POST to a route handler — no server-action machinery.
-    // If the response isn't JSON-parseable (e.g. an HTML error page got
-    // served), the catch block surfaces a clear retry message.
     try {
-      const res = await fetch("/api/auth/magic-link", {
+      const res = await fetch("/api/auth/sign-in", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password }),
         cache: "no-store",
       });
 
@@ -31,26 +27,27 @@ export default function LoginPage() {
         payload = await res.json();
       } catch {
         throw new Error(
-          `Server returned ${res.status} with a non-JSON body. The page may be out of date.`
+          `Server returned ${res.status} with a non-JSON body. Refresh the page and try again.`
         );
       }
 
       if (res.ok && payload.ok) {
-        setStatus("sent");
+        // Auth cookies set by the server. Redirect to the dashboard.
+        window.location.href = "/";
         return;
       }
 
       setStatus("error");
       setErrorMessage(
-        payload.error ?? `Request failed (HTTP ${res.status}).`
+        payload.error ?? `Sign-in failed (HTTP ${res.status}).`
       );
     } catch (err) {
       setStatus("error");
       const msg = err instanceof Error ? err.message : String(err);
-      const looksLikeColdStart =
+      const looksLikeNetwork =
         /unexpected end of json|fetch|network|timeout|503|502/i.test(msg);
       setErrorMessage(
-        looksLikeColdStart
+        looksLikeNetwork
           ? "The auth service is waking up. Please wait a few seconds and try again."
           : msg
       );
@@ -78,19 +75,16 @@ export default function LoginPage() {
       <div className="grid min-h-[calc(100vh-1.875rem)] grid-cols-1 lg:grid-cols-[1fr_minmax(420px,440px)]">
         {/* ── Left: document cover ────────────────────────────── */}
         <div className="relative flex flex-col justify-between p-8 lg:p-14 border-r border-rule">
-          {/* Decorative crosshairs in the corners */}
           <CornerMark className="top-4 left-4" />
           <CornerMark className="top-4 right-4" />
           <CornerMark className="bottom-4 left-4" />
           <CornerMark className="bottom-4 right-4" />
 
-          {/* Header marks */}
           <div className="flex items-center justify-between gap-4">
             <div className="mono-caps text-ink-3">Tryaksh Innovations Pvt. Ltd.</div>
             <div className="mono-caps text-ink-3">Issue · Edition 02</div>
           </div>
 
-          {/* Title block */}
           <div className="max-w-2xl">
             <Image
               src="/tryaksh-logo.png"
@@ -123,7 +117,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Footer block */}
           <div className="space-y-3">
             <div className="h-px bg-rule-3" />
             <div className="flex flex-wrap items-center justify-between gap-4 mono-caps text-ink-3">
@@ -143,85 +136,82 @@ export default function LoginPage() {
               Sign in
             </h2>
             <p className="text-[14px] text-ink-2 mb-8">
-              A single-use link will be sent to your inbox. Only allowlisted
-              emails may access.
+              Sign in with your Tryaksh email and password. Only allowlisted
+              users may access.
             </p>
 
-            {status === "sent" ? (
-              <div className="border border-seal-ink/40 bg-seal-soft p-5">
-                <div className="mono-caps text-seal-ink mb-2">
-                  ✓ Sent to inbox
-                </div>
-                <p className="text-[13px] text-ink-2">
-                  Magic link sent to{" "}
-                  <span className="font-mono text-ink">{email}</span>.
-                  Click the link to complete sign-in. The link expires in 10
-                  minutes.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatus("idle");
-                    setEmail("");
-                  }}
-                  className="mt-4 mono-caps text-ink-3 hover:text-ink"
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label
+                  htmlFor="email"
+                  className="mono-caps text-ink-2 block mb-2"
                 >
-                  ← Use a different email
-                </button>
+                  Email address
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@tryakshipl.com"
+                  required
+                  autoComplete="username"
+                  className="w-full bg-transparent border-0 border-b border-rule-2 px-0 py-2 text-[18px] font-display text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink transition-colors"
+                />
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div>
-                  <label
-                    htmlFor="email"
-                    className="mono-caps text-ink-2 block mb-2"
-                  >
-                    Email address
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@tryakshipl.com"
-                    required
-                    className="w-full bg-transparent border-0 border-b border-rule-2 px-0 py-2 text-[18px] font-display text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink transition-colors"
-                  />
-                </div>
 
-                {status === "error" && (
-                  <div className="border border-alert-ink/40 bg-alert-soft p-3">
-                    <div className="mono-caps text-alert-ink mb-1">Denied</div>
-                    <p className="text-[12px] text-ink-2">{errorMessage}</p>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={status === "loading"}
-                  className="group w-full h-11 bg-ink text-paper font-mono text-[12px] uppercase tracking-[0.18em] hover:bg-ink-2 transition-colors disabled:opacity-60 flex items-center justify-center gap-3"
+              <div>
+                <label
+                  htmlFor="password"
+                  className="mono-caps text-ink-2 block mb-2"
                 >
-                  {status === "loading" ? (
-                    <>
-                      <span className="size-1.5 bg-signal rounded-full animate-pulse" />
-                      Issuing link…
-                    </>
-                  ) : (
-                    <>
-                      Issue magic link
-                      <span className="text-signal">→</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                  autoComplete="current-password"
+                  className="w-full bg-transparent border-0 border-b border-rule-2 px-0 py-2 text-[18px] font-mono text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink transition-colors tracking-widest"
+                />
+              </div>
+
+              {status === "error" && (
+                <div className="border border-alert-ink/40 bg-alert-soft p-3">
+                  <div className="mono-caps text-alert-ink mb-1">Denied</div>
+                  <p className="text-[12px] text-ink-2">{errorMessage}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={status === "loading"}
+                className="group w-full h-11 bg-ink text-paper font-mono text-[12px] uppercase tracking-[0.18em] hover:bg-ink-2 transition-colors disabled:opacity-60 flex items-center justify-center gap-3"
+              >
+                {status === "loading" ? (
+                  <>
+                    <span className="size-1.5 bg-signal rounded-full animate-pulse" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    Sign in
+                    <span className="text-signal">→</span>
+                  </>
+                )}
+              </button>
+            </form>
 
             <div className="mt-10 pt-5 border-t border-rule">
               <div className="mono-caps text-ink-4 mb-2">Footnote</div>
               <p className="text-[11px] text-ink-3 leading-relaxed">
-                Per Engineering Standards §7, all designs created using Tryaksh
-                tools are Tryaksh property. Sign-in is logged in the audit
-                trail.
+                Don&apos;t have a password yet? Contact the CEO to be added.
+                All sign-ins are logged in the audit trail per Engineering
+                Standards §7.
               </p>
             </div>
           </div>

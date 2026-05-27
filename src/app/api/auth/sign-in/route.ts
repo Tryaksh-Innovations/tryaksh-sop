@@ -4,12 +4,12 @@ import { isEmailAllowed } from "@/lib/allowlist";
 import { logger } from "@/lib/logger";
 
 /**
- * POST /api/auth/magic-link
- * Body: { email: string }
+ * POST /api/auth/sign-in
+ * Body: { email: string, password: string }
  *
- * Plain JSON in/out — no server-action machinery, no action ID hashing,
- * no edge cache surprises. This is the reliable path for issuing a
- * magic link from the login page.
+ * Plain JSON in/out. Validates email is allowlisted, then calls
+ * Supabase signInWithPassword. On success, the SSR client sets
+ * auth cookies on the response automatically.
  */
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export const maxDuration = 30;
 
 interface Body {
   email?: unknown;
+  password?: unknown;
 }
 
 function json(
@@ -45,13 +46,19 @@ export async function POST(request: Request) {
   }
 
   const rawEmail = body.email;
+  const rawPassword = body.password;
+
   if (typeof rawEmail !== "string" || !rawEmail.trim()) {
     return json(400, { ok: false, error: "Email is required." });
   }
+  if (typeof rawPassword !== "string" || !rawPassword) {
+    return json(400, { ok: false, error: "Password is required." });
+  }
+
   const normalized = rawEmail.trim().toLowerCase();
 
   if (!isEmailAllowed(normalized)) {
-    logger.warn("Magic link denied — email not in allowlist", {
+    logger.warn("Sign-in denied — email not in allowlist", {
       email: normalized,
     });
     return json(403, {
@@ -63,42 +70,38 @@ export async function POST(request: Request) {
 
   try {
     const supabase = await createClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: normalized,
-      options: {
-        emailRedirectTo: `${appUrl}/auth/callback`,
-        shouldCreateUser: true,
-      },
+      password: rawPassword,
     });
 
     if (error) {
-      logger.error("Supabase signInWithOtp failed", {
+      logger.warn("Supabase signInWithPassword failed", {
         email: normalized,
         error: error.message,
-        status: (error as { status?: number }).status,
       });
 
-      // Translate cryptic Supabase errors into actionable messages.
       const msg = error.message;
       let friendly = msg;
-      if (/unexpected token.*doctype|html/i.test(msg)) {
+      if (/invalid login credentials/i.test(msg)) {
+        friendly = "Wrong email or password. Check both and try again.";
+      } else if (/email not confirmed/i.test(msg)) {
         friendly =
-          "Supabase auth service is unreachable or rate-limiting. Wait a minute and try again; if it persists, check the Supabase dashboard for project status.";
+          "Your account email is not confirmed. Ask the admin to confirm you in Supabase.";
+      } else if (/unexpected token.*doctype|html/i.test(msg)) {
+        friendly =
+          "Auth service is unreachable right now. Try again in a moment.";
       } else if (/rate limit|too many requests|429/i.test(msg)) {
         friendly =
-          "Too many sign-in requests for this email. Wait a few minutes and try again.";
-      } else if (/email.*invalid|invalid.*email/i.test(msg)) {
-        friendly = "That email address is not valid.";
+          "Too many sign-in attempts. Wait a few minutes and try again.";
       }
 
-      return json(502, { ok: false, error: friendly });
+      return json(401, { ok: false, error: friendly });
     }
 
     return json(200, { ok: true });
   } catch (err) {
-    logger.error("magic-link route crashed", {
+    logger.error("sign-in route crashed", {
       email: normalized,
       error: err instanceof Error ? err.message : String(err),
     });
