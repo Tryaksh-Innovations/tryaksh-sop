@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !anonKey) {
-    logger.error("Supabase env vars missing", {
+    logger.error("Supabase env vars missing", null, {
       hasUrl: !!supabaseUrl,
       hasKey: !!anonKey,
     });
@@ -123,9 +123,8 @@ export async function POST(request: Request) {
       }
     );
   } catch (err) {
-    logger.error("Network error reaching Supabase", {
+    logger.error("Network error reaching Supabase", err, {
       email: normalized,
-      error: err instanceof Error ? err.message : String(err),
     });
     return json(503, {
       ok: false,
@@ -138,10 +137,12 @@ export async function POST(request: Request) {
   try {
     parsed = JSON.parse(bodyText);
   } catch {
-    logger.error("Supabase returned non-JSON response", {
+    logger.error("Supabase returned non-JSON response", null, {
       email: normalized,
       status: authRes.status,
-      bodyPreview: bodyText.substring(0, 200),
+      contentType: authRes.headers.get("content-type") ?? "",
+      cfRay: authRes.headers.get("cf-ray") ?? "",
+      bodyPreview: bodyText.substring(0, 300),
     });
     return json(503, {
       ok: false,
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
       `HTTP ${authRes.status}`;
     logger.warn("Supabase auth rejected sign-in", {
       email: normalized,
-      status: authRes.status,
+      status: String(authRes.status),
       rawMsg,
     });
     return json(401, {
@@ -171,9 +172,9 @@ export async function POST(request: Request) {
   const accessToken = parsed?.access_token as string | undefined;
   const refreshToken = parsed?.refresh_token as string | undefined;
   if (!accessToken || !refreshToken) {
-    logger.error("Supabase auth ok but no tokens in response", {
+    logger.error("Supabase auth ok but no tokens in response", null, {
       email: normalized,
-      keys: parsed ? Object.keys(parsed) : [],
+      keys: parsed ? Object.keys(parsed).join(",") : "",
     });
     return json(502, {
       ok: false,
@@ -206,9 +207,8 @@ export async function POST(request: Request) {
       refresh_token: refreshToken,
     });
   } catch (err) {
-    logger.error("setSession failed after successful auth", {
+    logger.error("setSession failed after successful auth", err, {
       email: normalized,
-      error: err instanceof Error ? err.message : String(err),
     });
     return json(500, {
       ok: false,
