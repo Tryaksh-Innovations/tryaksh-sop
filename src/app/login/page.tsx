@@ -25,11 +25,29 @@ export default function LoginPage() {
         setErrorMessage(result.error);
       }
     } catch (err) {
-      // Server action transport-level failures (timeouts, edge function
-      // crashes) surface here as "Unexpected end of JSON input" or similar.
-      // Almost always a Supabase cold start — a retry succeeds.
       setStatus("error");
       const msg = err instanceof Error ? err.message : String(err);
+
+      // Stale-deploy action ID mismatch. The page HTML in the browser is from
+      // an earlier deploy and references an action ID the current server no
+      // longer recognizes. Force a hard refresh to pull the latest bundle.
+      const looksLikeStaleDeploy =
+        /server action not found|unrecognized.*action|unexpected token.*doctype|action id/i.test(
+          msg
+        );
+      if (looksLikeStaleDeploy) {
+        setErrorMessage(
+          "This page is out of date. Refreshing to load the latest version…"
+        );
+        // Give the user a beat to read the message, then force a no-cache reload.
+        setTimeout(() => {
+          window.location.href = `/login?v=${Date.now()}`;
+        }, 1200);
+        return;
+      }
+
+      // Server action transport-level failures (timeouts, edge function
+      // crashes) — usually Supabase cold start; a retry succeeds.
       const looksLikeColdStart =
         /unexpected end of json|fetch|network|timeout/i.test(msg);
       setErrorMessage(
