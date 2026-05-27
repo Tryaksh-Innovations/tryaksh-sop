@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 import { isEmailAllowed } from "@/lib/allowlist";
 import { logger } from "@/lib/logger";
 
@@ -7,9 +8,13 @@ import { logger } from "@/lib/logger";
  * POST /api/auth/sign-in
  * Body: { email: string, password: string }
  *
- * Plain JSON in/out. Validates email is allowlisted, then calls
- * Supabase signInWithPassword. On success, the SSR client sets
- * auth cookies on the response automatically.
+ * Uses raw fetch against Supabase's REST endpoint instead of the SDK,
+ * with browser-shaped headers. This bypasses the Cloudflare bot
+ * heuristics that were rejecting the SDK's calls from Vercel
+ * serverless functions with an HTML challenge page.
+ *
+ * On success, we set the session via the SSR client which writes the
+ * auth cookies — same end state as if signInWithPassword had worked.
  */
 
 export const dynamic = "force-dynamic";
@@ -17,6 +22,10 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 export const maxDuration = 30;
+// Run in a region close to the Supabase project (ap-southeast-2 / Sydney).
+// Singapore is the closest Vercel region; reduces latency and looks less
+// like cross-continent bot traffic to Supabase's Cloudflare layer.
+export const preferredRegion = ["sin1", "syd1", "bom1", "iad1"];
 
 interface Body {
   email?: unknown;
@@ -35,6 +44,22 @@ function json(
       "Vercel-CDN-Cache-Control": "no-store",
     },
   });
+}
+
+function friendlyMessage(rawMsg: string, status: number): string {
+  if (/invalid login credentials|invalid_credentials/i.test(rawMsg)) {
+    return "Wrong email or password. Check both and try again.";
+  }
+  if (/email not confirmed|email_not_confirmed/i.test(rawMsg)) {
+    return "Your account email is not confirmed. Open the user in Supabase Dashboard → Auth → Users and confirm the email.";
+  }
+  if (/rate limit|too many requests|over_request_rate|429/i.test(rawMsg)) {
+    return "Too many sign-in attempts. Wait a few minutes and try again.";
+  }
+  if (/unexpected token.*doctype|html|<!doctype/i.test(rawMsg)) {
+    return "Auth service is unreachable right now. Try again in a moment.";
+  }
+  return rawMsg || `Sign-in failed (HTTP ${status}).`;
 }
 
 export async function POST(request: Request) {
@@ -68,47 +93,128 @@ export async function POST(request: Request) {
     });
   }
 
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: normalized,
-      password: rawPassword,
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) {
+    logger.error("Supabase env vars missing", {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!anonKey,
     });
+    return json(503, { ok: false, error: "Auth service misconfigured." });
+  }
 
-    if (error) {
-      logger.warn("Supabase signInWithPassword failed", {
-        email: normalized,
-        error: error.message,
-      });
-
-      const msg = error.message;
-      let friendly = msg;
-      if (/invalid login credentials/i.test(msg)) {
-        friendly = "Wrong email or password. Check both and try again.";
-      } else if (/email not confirmed/i.test(msg)) {
-        friendly =
-          "Your account email is not confirmed. Ask the admin to confirm you in Supabase.";
-      } else if (/unexpected token.*doctype|html/i.test(msg)) {
-        friendly =
-          "Auth service is unreachable right now. Try again in a moment.";
-      } else if (/rate limit|too many requests|429/i.test(msg)) {
-        friendly =
-          "Too many sign-in attempts. Wait a few minutes and try again.";
+  // ── Raw fetch to Supabase's password-grant endpoint ─────────
+  // Browser-shaped headers to look like a normal client, not a bot.
+  let authRes: Response;
+  try {
+    authRes = await fetch(
+      `${supabaseUrl}/auth/v1/token?grant_type=password`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          apikey: anonKey,
+          // Looks like a normal browser to Supabase's Cloudflare layer.
+          "User-Agent":
+            "Mozilla/5.0 (compatible; TryakshSOP/1.0; +https://sop.tryakshipl.com)",
+        },
+        body: JSON.stringify({ email: normalized, password: rawPassword }),
       }
-
-      return json(401, { ok: false, error: friendly });
-    }
-
-    return json(200, { ok: true });
+    );
   } catch (err) {
-    logger.error("sign-in route crashed", {
+    logger.error("Network error reaching Supabase", {
       email: normalized,
       error: err instanceof Error ? err.message : String(err),
     });
     return json(503, {
       ok: false,
-      error:
-        "Auth service is unavailable. Please try again in a few seconds.",
+      error: "Could not reach auth service. Please try again.",
     });
   }
+
+  const bodyText = await authRes.text();
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    logger.error("Supabase returned non-JSON response", {
+      email: normalized,
+      status: authRes.status,
+      bodyPreview: bodyText.substring(0, 200),
+    });
+    return json(503, {
+      ok: false,
+      error: "Auth service returned an unexpected response. Try again shortly.",
+    });
+  }
+
+  if (!authRes.ok) {
+    const rawMsg =
+      (parsed?.msg as string) ||
+      (parsed?.error_description as string) ||
+      (parsed?.error as string) ||
+      (parsed?.message as string) ||
+      `HTTP ${authRes.status}`;
+    logger.warn("Supabase auth rejected sign-in", {
+      email: normalized,
+      status: authRes.status,
+      rawMsg,
+    });
+    return json(401, {
+      ok: false,
+      error: friendlyMessage(rawMsg, authRes.status),
+    });
+  }
+
+  // Success — parsed has access_token, refresh_token, etc.
+  const accessToken = parsed?.access_token as string | undefined;
+  const refreshToken = parsed?.refresh_token as string | undefined;
+  if (!accessToken || !refreshToken) {
+    logger.error("Supabase auth ok but no tokens in response", {
+      email: normalized,
+      keys: parsed ? Object.keys(parsed) : [],
+    });
+    return json(502, {
+      ok: false,
+      error: "Auth service returned an unexpected success shape.",
+    });
+  }
+
+  // ── Set the session cookies via the SSR client ──────────────
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(supabaseUrl, anonKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            try {
+              cookieStore.set(name, value, options);
+            } catch {
+              // ignore set errors during streaming
+            }
+          });
+        },
+      },
+    });
+
+    await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+  } catch (err) {
+    logger.error("setSession failed after successful auth", {
+      email: normalized,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return json(500, {
+      ok: false,
+      error: "Signed in with Supabase but session couldn't be saved. Try again.",
+    });
+  }
+
+  return json(200, { ok: true });
 }
