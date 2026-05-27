@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { getDashboardStats, listProjects } from "@/server/queries/projects";
 import { listAwaitingApprovalForCeo } from "@/server/queries/stage-runs";
 import { getCurrentUser } from "@/server/auth";
+import { DailyEpigraph } from "@/components/dashboard/daily-epigraph";
 import { Lock, ArrowRight, Plus } from "lucide-react";
 
 export const metadata = {
@@ -69,6 +70,9 @@ export default async function DashboardPage() {
           )}
         </div>
       </header>
+
+      {/* ── Daily epigraph ─────────────────────────────────────── */}
+      <DailyEpigraph />
 
       {/* ── Stats: specification-table style ────────────────────── */}
       <section className="border-y border-ink/80 divide-x divide-rule grid grid-cols-2 md:grid-cols-4">
