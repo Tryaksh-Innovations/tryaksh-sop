@@ -33,6 +33,13 @@ export const metadata: Metadata = {
 };
 
 /**
+ * Allow server actions and page renders up to 30s. Supabase free-tier cold
+ * starts can take 15-30s; the Vercel default (10s) is too short and surfaces
+ * as "Unexpected end of JSON input" when a server action transport times out.
+ */
+export const maxDuration = 30;
+
+/**
  * Sets the `dark` class on <html> BEFORE first paint, based on:
  *   1. saved preference in localStorage ('tryaksh-theme')
  *   2. system preference (prefers-color-scheme: dark)

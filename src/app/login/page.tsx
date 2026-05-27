@@ -16,12 +16,27 @@ export default function LoginPage() {
     setStatus("loading");
     setErrorMessage("");
 
-    const result = await requestMagicLink(email);
-    if (result.ok) {
-      setStatus("sent");
-    } else {
+    try {
+      const result = await requestMagicLink(email);
+      if (result.ok) {
+        setStatus("sent");
+      } else {
+        setStatus("error");
+        setErrorMessage(result.error);
+      }
+    } catch (err) {
+      // Server action transport-level failures (timeouts, edge function
+      // crashes) surface here as "Unexpected end of JSON input" or similar.
+      // Almost always a Supabase cold start — a retry succeeds.
       setStatus("error");
-      setErrorMessage(result.error);
+      const msg = err instanceof Error ? err.message : String(err);
+      const looksLikeColdStart =
+        /unexpected end of json|fetch|network|timeout/i.test(msg);
+      setErrorMessage(
+        looksLikeColdStart
+          ? "The auth service is waking up. Please wait a few seconds and try again."
+          : `Something went wrong: ${msg}`
+      );
     }
   }
 
