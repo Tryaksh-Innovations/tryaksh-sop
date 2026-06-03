@@ -20,6 +20,7 @@ import {
   users,
 } from "@/db/schema";
 import { writeAuditLog } from "@/lib/audit";
+import { writeNotification } from "@/lib/notify";
 import { logger } from "@/lib/logger";
 import {
   createProjectSchema,
@@ -176,6 +177,26 @@ export async function createProject(
       ipAddress,
       userAgent,
     });
+
+    // Notify the assigned designer that a new project is theirs.
+    // Skip if the CEO assigned themselves (they already know).
+    if (createdProject.designerId !== actor.id) {
+      await writeNotification({
+        recipientId: createdProject.designerId,
+        kind: "project_assigned",
+        payload: {
+          projectId: createdProject.id,
+          projectCode: createdProject.code,
+          projectName: createdProject.name,
+          designClass: createdProject.designClass,
+          workflowSlug: workflow.slug,
+          workflowName: workflow.name,
+          firstStageNumber: firstStage.stageNumber,
+          firstStageName: firstStage.name,
+          assignedBy: actor.name,
+        },
+      });
+    }
   } catch (error) {
     logger.error("createProject failed", error, { input });
     // Best-effort cleanup if project was created but later steps failed

@@ -67,12 +67,26 @@ function buildSummary(n: NotificationItem): string {
   }
   if (n.kind === "approval_granted") {
     if (decision === "reopen") {
-      return `${code} — Stage 8 reopened; new Stage 6 run created`;
+      const reopenStage = p.reopenStageNumber as string | undefined;
+      return reopenStage
+        ? `${code} — Stage ${stageNumber} reopened; new Stage ${reopenStage} run created`
+        : `${code} — Stage ${stageNumber} reopened`;
     }
     return `${code} — Stage ${stageNumber} (${stageName}) approved`;
   }
   if (n.kind === "approval_denied") {
     return `${code} — Stage ${stageNumber} sent back${note ? `: ${note}` : ""}`;
+  }
+  if (n.kind === "project_assigned") {
+    const projectName = p.projectName as string | undefined;
+    const firstStageName = p.firstStageName as string | undefined;
+    const assignedBy = p.assignedBy as string | undefined;
+    const fragments = [`${code}`];
+    if (projectName) fragments.push(`— ${projectName}`);
+    fragments.push("· assigned to you");
+    if (assignedBy) fragments.push(`by ${assignedBy}`);
+    if (firstStageName) fragments.push(`· begin at ${firstStageName}`);
+    return fragments.join(" ");
   }
   return `${code} — ${KIND_VERB[n.kind]}`;
 }
