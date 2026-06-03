@@ -11,6 +11,7 @@ export const projectCodeSchema = z
   );
 
 export const createProjectSchema = z.object({
+  workflowId: z.string().uuid("Pick a workflow"),
   code: projectCodeSchema,
   name: z
     .string()

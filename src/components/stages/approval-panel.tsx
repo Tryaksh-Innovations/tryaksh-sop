@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   approveStage,
   sendBack,
-  decideStage8,
+  decideAtGate,
   requestApproval,
 } from "@/server/actions/workflow";
 import { AlertCircle, Send, RefreshCw } from "lucide-react";
@@ -204,15 +204,23 @@ export function ApprovalPanel({
 }
 
 // ─────────────────────────────────────────────────────────────────
-// CEO: Stage 8 decision — proceed | reopen
+// CEO: Decision-gate panel — proceed | reopen
+// Works for any stage where workflow_stages.is_decision_gate = true.
 // ─────────────────────────────────────────────────────────────────
 
-export function Stage8DecisionPanel({
+interface DecisionGateStage {
+  stageNumber: string;
+  reopensToStageNumber: string | null;
+}
+
+export function DecisionGatePanel({
   stageRunId,
   ceoName,
+  stage,
 }: {
   stageRunId: string;
   ceoName: string;
+  stage: DecisionGateStage;
 }) {
   const router = useRouter();
   const [decision, setDecision] = useState<"proceed" | "reopen">("proceed");
@@ -224,7 +232,7 @@ export function Stage8DecisionPanel({
   function submit() {
     setError(null);
     startTransition(async () => {
-      const result = await decideStage8({
+      const result = await decideAtGate({
         stageRunId,
         decision,
         typedName,
@@ -240,14 +248,16 @@ export function Stage8DecisionPanel({
     });
   }
 
+  const reopenTarget = stage.reopensToStageNumber;
+
   return (
     <div className="space-y-5">
       <div>
         <div className="mono-caps text-signal-ink mb-1">
-          Stage 8 · Decision gate
+          Stage {stage.stageNumber} · Decision gate
         </div>
         <div className="font-display text-[22px] text-ink leading-tight">
-          Proceed to layout, or re-open the schematic?
+          Proceed to the next stage, or re-open?
         </div>
       </div>
 
@@ -261,11 +271,10 @@ export function Stage8DecisionPanel({
         >
           <RadioGroupItem value="proceed" className="mt-0.5" />
           <div>
-            <div className="text-[13px] font-medium text-ink">
-              Proceed to layout
-            </div>
+            <div className="text-[13px] font-medium text-ink">Proceed</div>
             <div className="mt-0.5 text-[11px] text-ink-3">
-              All P1 blocks PASS — advance to Stage 9a (placement review).
+              All acceptance criteria met — advance to the next stage in the
+              workflow.
             </div>
           </div>
         </label>
@@ -276,12 +285,17 @@ export function Stage8DecisionPanel({
           <div>
             <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
               <RefreshCw className="size-3 text-alert" />
-              Re-open schematic
+              Re-open
+              {reopenTarget && (
+                <span className="font-mono text-[10px] text-ink-3">
+                  → Stage {reopenTarget}
+                </span>
+              )}
             </div>
             <div className="mt-0.5 text-[11px] text-ink-3">
-              A P1 block failed or a marginal result warrants a schematic
-              change. Creates a new Stage 6 run; project returns to schematic
-              lock.
+              An acceptance criterion failed{reopenTarget
+                ? ` — creates a new Stage ${reopenTarget} run; project returns to that stage.`
+                : "."}
             </div>
           </div>
         </label>
@@ -337,10 +351,13 @@ export function Stage8DecisionPanel({
           {pending
             ? "Submitting…"
             : decision === "proceed"
-              ? "Proceed to Stage 9a"
-              : "Re-open schematic"}
+              ? "Proceed"
+              : "Re-open"}
         </Button>
       </div>
     </div>
   );
 }
+
+// Back-compat alias for older imports.
+export const Stage8DecisionPanel = DecisionGatePanel;

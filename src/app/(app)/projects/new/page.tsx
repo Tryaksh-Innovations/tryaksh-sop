@@ -4,7 +4,7 @@ import { APP_NAME } from "@/lib/constants";
 import { Card, CardContent, CardMark } from "@/components/ui/card";
 import { CreateProjectForm } from "@/components/projects/create-project-form";
 import { requireUser } from "@/server/auth";
-import { listDesigners } from "@/server/queries/projects";
+import { listDesigners, listActiveWorkflows } from "@/server/queries/projects";
 import { ArrowLeft } from "lucide-react";
 
 export const metadata = {
@@ -18,7 +18,10 @@ export default async function NewProjectPage() {
     redirect("/projects");
   }
 
-  const designers = await listDesigners().catch(() => []);
+  const [designers, workflows] = await Promise.all([
+    listDesigners().catch(() => []),
+    listActiveWorkflows().catch(() => []),
+  ]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-10">
@@ -36,16 +39,16 @@ export default async function NewProjectPage() {
           Open a new project
         </h1>
         <p className="mt-3 font-display text-[16px] text-ink-2 max-w-xl">
-          A project starts at{" "}
-          <span className="text-ink">Stage 1 — Parts Selection</span>. Assign
-          the designer now; promote/reassign later if needed.
+          A project starts at <span className="text-ink">Stage 1</span> of the
+          chosen workflow. Assign the designer now; promote/reassign later if
+          needed.
         </p>
       </header>
 
       <Card>
         <CardMark>§ A</CardMark>
         <CardContent className="py-6">
-          <CreateProjectForm designers={designers} />
+          <CreateProjectForm designers={designers} workflows={workflows} />
         </CardContent>
       </Card>
     </div>

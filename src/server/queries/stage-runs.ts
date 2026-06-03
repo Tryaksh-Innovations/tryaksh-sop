@@ -3,6 +3,7 @@ import {
   projects,
   projectStageRuns,
   workflowStages,
+  workflows,
   checklistItems,
   checklistResponses,
   externalLinks,
@@ -22,9 +23,11 @@ export async function getStageRunDetail(stageRunId: string) {
       stage: workflowStages,
       project: projects,
       designer: users,
+      workflow: workflows,
     })
     .from(projectStageRuns)
     .innerJoin(workflowStages, eq(workflowStages.id, projectStageRuns.stageId))
+    .innerJoin(workflows, eq(workflows.id, workflowStages.workflowId))
     .innerJoin(projects, eq(projects.id, projectStageRuns.projectId))
     .innerJoin(users, eq(users.id, projects.designerId))
     .where(eq(projectStageRuns.id, stageRunId))
@@ -75,6 +78,7 @@ export async function getStageRunDetail(stageRunId: string) {
     stage: row.stage,
     project: row.project,
     designer: row.designer,
+    workflow: row.workflow,
     items,
     responses,
     responseByItemId: responseById,

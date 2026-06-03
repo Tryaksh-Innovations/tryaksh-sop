@@ -98,7 +98,7 @@ export default async function ProjectsPage() {
               Project register · {projects.length} active
             </span>
             <span className="font-mono text-[10px] text-ink-3 uppercase tracking-[0.12em]">
-              See: TRYAKSH-SOP-PCB-001 §2
+              See: TRYAKSH-SOP-PCB-001 · TRYAKSH-SOP-MECH-001
             </span>
           </div>
           <Table>
@@ -106,6 +106,7 @@ export default async function ProjectsPage() {
               <TableRow>
                 <TableHead className="pl-5 w-10">No.</TableHead>
                 <TableHead>Project</TableHead>
+                <TableHead>Workflow</TableHead>
                 <TableHead>Class</TableHead>
                 <TableHead>Designer</TableHead>
                 <TableHead>Current stage</TableHead>
@@ -128,6 +129,11 @@ export default async function ProjectsPage() {
                         {p.name}
                       </div>
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center border border-rule-2 bg-paper-3 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-2">
+                      {p.workflowSlug}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <span className="inline-flex items-center justify-center size-5 border border-ink font-mono text-[11px] font-medium">

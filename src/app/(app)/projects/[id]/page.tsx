@@ -195,7 +195,9 @@ export default async function ProjectDetailPage({
                     </Button>
                   )}
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/handbook/stages/${currentStage.stageNumber}`}>
+                    <Link
+                      href={`/handbook/${workflow.slug}/stages/${currentStage.stageNumber}`}
+                    >
                       <ShieldCheck className="size-3" />
                       SOP reference
                     </Link>

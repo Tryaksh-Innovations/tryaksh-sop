@@ -32,7 +32,7 @@ import {
   requestApprovalSchema,
   approveStageSchema,
   sendBackSchema,
-  decideStage8Schema,
+  decideAtGateSchema,
 } from "@/lib/validators/workflow";
 import type { AppUser } from "@/server/auth";
 
@@ -475,12 +475,11 @@ export async function approveStage(raw: unknown): Promise<ActionResult> {
       error: "You cannot approve your own work. Another CEO must approve.",
     };
   }
-  // Stage 8 uses a separate action with proceed/reopen branches.
-  if (ctx.stage.stageNumber === "8") {
+  // Decision-gate stages use a separate action with proceed/reopen branches.
+  if (ctx.stage.isDecisionGate) {
     return {
       ok: false,
-      error:
-        "Stage 8 requires a proceed/reopen decision. Use the decision panel.",
+      error: `Stage ${ctx.stage.stageNumber} is a decision gate. Use the decision panel (proceed / reopen).`,
     };
   }
 
@@ -623,12 +622,13 @@ export async function sendBack(raw: unknown): Promise<ActionResult> {
     };
   }
 
-  // Lock gates: send-back is not the right tool. Stage 6 send-back belongs to
-  // the deeper "re-open schematic" process; Stage 8 has its own decision.
-  if (ctx.stage.stageNumber === "8") {
+  // Lock gates: send-back is not the right tool — decision-gate stages have
+  // their own proceed/reopen panel. Schematic-lock-style gates use the
+  // deeper "re-open" process triggered from later in the workflow.
+  if (ctx.stage.isDecisionGate) {
     return {
       ok: false,
-      error: "Use the Stage 8 decision panel (proceed / reopen) instead.",
+      error: `Stage ${ctx.stage.stageNumber} is a decision gate. Use the decision panel (proceed / reopen) instead.`,
     };
   }
 
@@ -676,12 +676,14 @@ export async function sendBack(raw: unknown): Promise<ActionResult> {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Decide Stage 8 (CEO → proceed | reopen)
+// Decide at a gate (CEO → proceed | reopen)
+// Works for any stage with isDecisionGate = true. The reopen target
+// is read from the stage's reopensToStageNumber column.
 // ─────────────────────────────────────────────────────────────────
 
-export async function decideStage8(raw: unknown): Promise<ActionResult> {
+export async function decideAtGate(raw: unknown): Promise<ActionResult> {
   const user = await requireRole("ceo");
-  const parsed = decideStage8Schema.safeParse(raw);
+  const parsed = decideAtGateSchema.safeParse(raw);
   if (!parsed.success) {
     return {
       ok: false,
@@ -693,8 +695,11 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
   const ctx = await loadRunForMutation(input.stageRunId);
   if (!ctx) return { ok: false, error: "Stage run not found." };
 
-  if (ctx.stage.stageNumber !== "8") {
-    return { ok: false, error: "decideStage8 only applies to Stage 8." };
+  if (!ctx.stage.isDecisionGate) {
+    return {
+      ok: false,
+      error: `Stage ${ctx.stage.stageNumber} is not a decision gate.`,
+    };
   }
   if (ctx.run.status !== "awaiting_approval") {
     return {
@@ -778,7 +783,7 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
       entityType: "project_stage_runs",
       entityId: ctx.run.id,
       afterJson: {
-        stageNumber: "8",
+        stageNumber: ctx.stage.stageNumber,
         decision: "proceed",
         typedName: input.typedName,
         note: input.note,
@@ -788,34 +793,47 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
       userAgent: reqCtx.userAgent,
     });
   } else {
-    // Reopen: create a new Stage 6 run with bumped runNumber, point project
-    // back to Stage 6, audit as schematic_reopened.
-    const stage6 = await getStageByNumberForWorkflow(
-      ctx.stage.workflowId,
-      "6"
-    );
-    if (!stage6) {
-      logger.error("Stage 6 not found for reopen", {
-        workflowId: ctx.stage.workflowId,
+    // Reopen: create a new run at the stage flagged by reopensToStageNumber,
+    // point the project back to it, audit as schematic_reopened.
+    const reopenTo = ctx.stage.reopensToStageNumber;
+    if (!reopenTo) {
+      logger.error("Decision gate missing reopensToStageNumber", {
+        stageId: ctx.stage.id,
+        stageNumber: ctx.stage.stageNumber,
       });
       return {
         ok: false,
-        error: "Stage 6 not found in this workflow. Cannot re-open.",
+        error:
+          "This decision gate has no reopen target configured. Update workflow_stages.reopens_to_stage_number.",
       };
     }
-    const runNumber = await getNextRunNumber(ctx.project.id, stage6.id);
+    const reopenStage = await getStageByNumberForWorkflow(
+      ctx.stage.workflowId,
+      reopenTo
+    );
+    if (!reopenStage) {
+      logger.error("Reopen target stage not found", {
+        workflowId: ctx.stage.workflowId,
+        reopenTo,
+      });
+      return {
+        ok: false,
+        error: `Stage ${reopenTo} not found in this workflow. Cannot re-open.`,
+      };
+    }
+    const runNumber = await getNextRunNumber(ctx.project.id, reopenStage.id);
     const [newRun] = await db
       .insert(projectStageRuns)
       .values({
         projectId: ctx.project.id,
-        stageId: stage6.id,
+        stageId: reopenStage.id,
         runNumber,
         status: "not_started",
       })
       .returning();
     await db
       .update(projects)
-      .set({ currentStageId: stage6.id, updatedAt: now })
+      .set({ currentStageId: reopenStage.id, updatedAt: now })
       .where(eq(projects.id, ctx.project.id));
 
     await writeNotification({
@@ -825,8 +843,11 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
         projectId: ctx.project.id,
         projectCode: ctx.project.code,
         stageRunId: ctx.run.id,
-        stageNumber: "8",
+        stageNumber: ctx.stage.stageNumber,
         decision: "reopen",
+        reopenStageNumber: reopenTo,
+        reopenRunId: newRun?.id ?? null,
+        // Back-compat alias for older notification consumers:
         newStage6RunId: newRun?.id ?? null,
       },
     });
@@ -840,9 +861,11 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
       entityType: "project_stage_runs",
       entityId: ctx.run.id,
       afterJson: {
-        stage8RunId: ctx.run.id,
-        newStage6RunId: newRun?.id ?? null,
-        newStage6RunNumber: runNumber,
+        decisionStageNumber: ctx.stage.stageNumber,
+        decisionRunId: ctx.run.id,
+        reopenStageNumber: reopenTo,
+        reopenRunId: newRun?.id ?? null,
+        reopenRunNumber: runNumber,
         typedName: input.typedName,
         note: input.note,
       },
@@ -854,3 +877,6 @@ export async function decideStage8(raw: unknown): Promise<ActionResult> {
   revalidateRun(ctx.project.id, ctx.run.id);
   return { ok: true };
 }
+
+// Back-compat alias so any in-flight imports still resolve.
+export const decideStage8 = decideAtGate;

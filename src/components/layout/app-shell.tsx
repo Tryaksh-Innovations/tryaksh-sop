@@ -64,9 +64,9 @@ export function AppShell({
       <div className="border-b border-rule-3 bg-ink text-paper">
         <div className="flex items-center justify-between gap-4 px-5 py-1.5">
           <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.18em]">
-            <span className="text-paper">TRYAKSH-SOP-PCB-001</span>
+            <span className="text-paper">TRYAKSH-INTERNAL</span>
             <span className="text-paper/60">·</span>
-            <span className="text-paper">v2.0</span>
+            <span className="text-paper">PCB v2.0 · MECH v2.0</span>
             <span className="text-paper/60">·</span>
             <span className="text-signal">STATUS: CONTROLLED</span>
           </div>

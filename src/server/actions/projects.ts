@@ -57,17 +57,20 @@ export async function createProject(
 
   const input = parsed.data;
 
-  // Look up the active PCB workflow (v1 has only one).
-  const [pcb] = await db
+  // Look up the chosen workflow and verify it's active.
+  const [workflow] = await db
     .select()
     .from(workflows)
-    .where(and(eq(workflows.slug, "pcb"), eq(workflows.isActive, true)))
+    .where(
+      and(eq(workflows.id, input.workflowId), eq(workflows.isActive, true))
+    )
     .limit(1);
 
-  if (!pcb) {
+  if (!workflow) {
     return {
       ok: false,
-      error: "No active PCB workflow found. Has the database been seeded?",
+      error: "Workflow not found or not active.",
+      fieldErrors: { workflowId: "Pick a valid workflow" },
     };
   }
 
@@ -104,7 +107,7 @@ export async function createProject(
   const [firstStage] = await db
     .select()
     .from(workflowStages)
-    .where(eq(workflowStages.workflowId, pcb.id))
+    .where(eq(workflowStages.workflowId, workflow.id))
     .orderBy(asc(workflowStages.displayOrder))
     .limit(1);
 
@@ -132,7 +135,7 @@ export async function createProject(
     const [createdProject] = await db
       .insert(projects)
       .values({
-        workflowId: pcb.id,
+        workflowId: workflow.id,
         code: input.code,
         name: input.name,
         designClass: input.designClass,

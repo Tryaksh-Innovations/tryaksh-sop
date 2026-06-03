@@ -22,6 +22,17 @@ export const workflowStages = pgTable(
     descriptionMarkdown: text("description_markdown"),
     requiresApproval: boolean("requires_approval").notNull().default(false),
     isLockGate: boolean("is_lock_gate").notNull().default(false),
+    /**
+     * Marks a stage as a decision gate (proceed / reopen branching).
+     * When true, the standard approve / send-back path is disabled —
+     * use the DecisionGatePanel + decideAtGate server action instead.
+     */
+    isDecisionGate: boolean("is_decision_gate").notNull().default(false),
+    /**
+     * For decision gates: the stage_number this stage reopens back to
+     * when the CEO chooses "reopen". Null on non-decision stages.
+     */
+    reopensToStageNumber: text("reopens_to_stage_number"),
     displayOrder: integer("display_order").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

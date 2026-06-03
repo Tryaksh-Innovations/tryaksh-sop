@@ -84,7 +84,7 @@ export const sendBackSchema = z.object({
     .max(2000),
 });
 
-export const decideStage8Schema = z
+export const decideAtGateSchema = z
   .object({
     stageRunId: z.string().uuid(),
     decision: z.enum(["proceed", "reopen"]),
@@ -101,9 +101,13 @@ export const decideStage8Schema = z
       (typeof v.note === "string" && v.note.length >= 10),
     {
       message:
-        "Reopening the schematic requires a written root-cause explanation (≥10 chars).",
+        "Reopening requires a written root-cause explanation (≥10 chars).",
       path: ["note"],
     }
   );
 
-export type DecideStage8Input = z.infer<typeof decideStage8Schema>;
+export type DecideAtGateInput = z.infer<typeof decideAtGateSchema>;
+
+// Back-compat alias — keep so any in-flight imports don't break.
+export const decideStage8Schema = decideAtGateSchema;
+export type DecideStage8Input = DecideAtGateInput;

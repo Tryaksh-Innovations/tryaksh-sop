@@ -14,6 +14,8 @@ export type ProjectListRow = {
   name: string;
   designClass: "A" | "B" | "C";
   status: "in_progress" | "on_hold" | "completed" | "archived";
+  workflowSlug: string;
+  workflowName: string;
   designerName: string;
   designerEmail: string;
   currentStageNumber: string | null;
@@ -29,6 +31,8 @@ export async function listProjects(): Promise<ProjectListRow[]> {
       name: projects.name,
       designClass: projects.designClass,
       status: projects.status,
+      workflowSlug: workflows.slug,
+      workflowName: workflows.name,
       designerName: users.name,
       designerEmail: users.email,
       currentStageNumber: workflowStages.stageNumber,
@@ -37,6 +41,7 @@ export async function listProjects(): Promise<ProjectListRow[]> {
     })
     .from(projects)
     .innerJoin(users, eq(users.id, projects.designerId))
+    .innerJoin(workflows, eq(workflows.id, projects.workflowId))
     .leftJoin(workflowStages, eq(workflowStages.id, projects.currentStageId))
     .orderBy(desc(projects.createdAt));
 
@@ -118,6 +123,20 @@ export async function getProjectStepperRows(
       runNumber: run?.runNumber ?? null,
     };
   });
+}
+
+export async function listActiveWorkflows() {
+  return db
+    .select({
+      id: workflows.id,
+      slug: workflows.slug,
+      name: workflows.name,
+      version: workflows.version,
+      description: workflows.description,
+    })
+    .from(workflows)
+    .where(eq(workflows.isActive, true))
+    .orderBy(asc(workflows.slug));
 }
 
 export async function listDesigners() {

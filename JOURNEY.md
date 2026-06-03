@@ -696,3 +696,169 @@ Final v1 commit:   2026-05-28
 Built well. Shipped live. Ready for the DRTG main board's next revision.
 
 — Documented in conversation between Richansh (CEO, Tryaksh Innovations) and Claude.
+
+---
+
+## Phase 7 — Mechanical SOP added as a second workflow
+
+A few days after v1 shipped, the Mechanical Design SOP v2.0
+(TRYAKSH-SOP-MECH-001) was finalised and dropped in. Because the
+schema and UI were built workflow-as-data from day one, adding a
+second workflow was a config-style change, not a rewrite.
+
+### What changed
+
+**Schema (1 migration)**
+
+Added two columns to `workflow_stages`:
+
+- `is_decision_gate boolean not null default false` — marks any stage
+  as a binary proceed/reopen gate (previously this was hardcoded to
+  `stageNumber === "8"`).
+- `reopens_to_stage_number text` — for decision gates, the stage to
+  reopen back to when the CEO chooses "reopen". Previously hardcoded
+  to `"6"`.
+
+One-shot backfill for the existing PCB Stage 8:
+
+```sql
+UPDATE workflow_stages
+SET is_decision_gate = true, reopens_to_stage_number = '6'
+WHERE stage_number = '8'
+  AND workflow_id IN (SELECT id FROM workflows WHERE slug = 'pcb');
+```
+
+**Server actions** (`src/server/actions/workflow.ts`)
+
+- `decideStage8` renamed to `decideAtGate` (with a back-compat alias).
+  Now triggers on `stage.isDecisionGate` instead of a literal `"8"`,
+  reads `stage.reopensToStageNumber` to determine where to reopen.
+- `approveStage` and `sendBack` now reject decision-gate stages via the
+  same flag, with workflow-agnostic error messages.
+- Audit afterJson uses `decisionStageNumber` / `reopenStageNumber` /
+  `reopenRunNumber` keys instead of `stage8RunId` / `newStage6RunId`
+  (back-compat aliases retained in notification payloads).
+
+**Component renames**
+
+- `Stage8DecisionPanel` → `DecisionGatePanel` (back-compat alias kept).
+  Now takes a `stage` prop with `{ stageNumber, reopensToStageNumber }`
+  and renders copy that adapts: "Stage 8 · Decision gate" becomes
+  "Stage N · Decision gate", and the reopen label shows the actual
+  reopen target ("→ Stage 6") instead of a hardcoded "schematic".
+
+**Handbook URL restructure**
+
+- `/handbook` is now a workflow picker showing both PCB and Mechanical
+  cards (with diagrams).
+- `/handbook/[workflow]` is the per-workflow landing.
+- `/handbook/[workflow]/stages/[stageNumber]` is the per-stage detail.
+- Old `/handbook/stages/[stageNumber]` URLs 301 to
+  `/handbook/pcb/stages/[stageNumber]` for back-compat.
+- `getWorkflowBySlug(slug)` replaces the old `getPcbWorkflow()` (alias
+  kept). `listActiveWorkflows()` powers the picker.
+
+**Project surfaces**
+
+- `/projects/new` has a Workflow dropdown above Design Class. Defaults
+  to PCB. `createProjectSchema` adds `workflowId`; `createProject`
+  uses the chosen workflow's first stage to seed the initial run.
+- `/projects` register adds a Workflow column showing the slug
+  (`pcb` / `mech`) as a small mono-caps tag.
+- `getProjectById` and `getStageRunDetail` now expose the joined
+  `workflow` row, so internal handbook links can include the slug:
+  `/handbook/${workflow.slug}/stages/${stage.stageNumber}`.
+
+**Seed**
+
+- New `drizzle/seed/mech-stages.ts` — 11 stages of the Mechanical SOP
+  verbatim from `Tryaksh_Mechanical_Design_SOP_v2.0.docx`. Lock gates
+  at Stage 2 (Datum Lock) and Stage 7 (DFM Review). No binary decision
+  gate in this workflow.
+- New `drizzle/seed/mech-checklist-items.ts` — 93 checklist items
+  across the 11 stages, grouped by SOP sub-section (5.2, 9.1, 9.2,
+  10.1, 10.2, 10.3, etc.).
+- `drizzle/seed/workflows.ts` refactored to seed both PCB and
+  Mechanical rows.
+- `drizzle/seed/index.ts` runs all seeds for both workflows.
+
+**Copy polish**
+
+- Login cover: headline now reads "The Engineering Design SOP" (was
+  "The PCB Design SOP"). Subtext mentions both workflows. Stats card
+  shows 21 stages / 172 checks / 04 lock gates.
+- Classification banner now reads
+  `TRYAKSH-INTERNAL · PCB v2.0 · MECH v2.0 · STATUS: CONTROLLED`.
+- `/demo` § 02 has a multi-workflow note above the live stepper
+  preview.
+
+### Mechanical SOP at a glance
+
+Eleven stages from concept to functional validation:
+
+| Stage | Name | Notes |
+|---|---|---|
+| 1 | Concept and Material Discussion | CEO + Designer joint; sets FEA + mockup flags |
+| **2** | **Datum Scheme and Interface Lock** | **LOCK GATE — first consequential gate** |
+| 3 | CAD Modeling | Designer-owned execution |
+| 4 | Mid-Model Review | CEO writes feedback (Class A mandatory) |
+| 5 | Design Refinement | Designer addresses Required items |
+| 6 | Tolerance Stack-up and FEA | Conditional; Assembly Gate inserted here for subassemblies |
+| **7** | **DFM Review** | **LOCK GATE — second consequential gate, CEO + Peer Reviewer + Designer** |
+| 8 | 3D-Print Mockup | Conditional (DOF or ergonomic parts) |
+| 9 | Drawing Release and Vendor Selection | CEO approves vendor |
+| 10 | First-Article Inspection | CEO signs first-article approval |
+| 11 | Functional Validation | Release / Re-spin / Scrap |
+
+Process-specific DFM rules cover CNC machining (Al 6061-T6),
+sheet metal, and 3D printing (PETG/ABS/ASA for tests, PLA only for
+Class C).
+
+### Why this was easy
+
+The architectural commitment from § 2 of this journey paid off:
+**workflow-as-data, not code**. The Mechanical SOP slots in as a new
+row in `workflows` + 11 rows in `workflow_stages` + 93 rows in
+`checklist_items`. The same `ChecklistForm`, `StageStepper`,
+`ApprovalPanel`, `AuditTable`, and notification system that drives
+PCB drives Mechanical with zero changes.
+
+The only code touched was the **two hardcodes** that snuck in during
+PCB-only development: `stageNumber === "8"` for the decision gate,
+and the reopen-to-"6" target. Both became data-driven via the new
+schema columns. Lesson recorded in § 17 of this journey: avoid
+literal stage numbers in business logic — flag the behaviour in the
+schema instead.
+
+### Estimated effort vs actual
+
+| Phase | Estimated | Actual |
+|---|---|---|
+| A — Schema | 15 min | ~10 min |
+| B — Generalise decision gate | 30 min | ~25 min |
+| C — Handbook restructure | 45 min | ~40 min |
+| D — Mech content extract + seed | 1–2 h | ~75 min |
+| E — Project workflow picker | 30 min | ~20 min |
+| F + G — Surfaces + polish | 30 min | ~20 min |
+| H — Verify + deploy | 30 min | ~15 min |
+
+Roughly 3 hours start to finish, including extraction and verification.
+
+### Final stats (now)
+
+```
+Database tables:                11
+Enums:                           8
+Workflows seeded:                2  (was 1)
+Stages seeded:                   21 (was 10)  → 10 PCB + 11 Mech
+Checklist items seeded:          172 (was 79) → 79 PCB + 93 Mech
+Lock gates:                      4  (was 2)   → 2 PCB + 2 Mech
+Routes (pages + APIs):           17 + 3 + 2 new handbook routes
+TypeScript lines:                ~7,800
+```
+
+Tryaksh now has both its disciplines codified in a single tool.
+Mechanical projects start at Stage 1 (Concept) and walk through to
+Stage 11 (Functional Validation), same engine, same audit, same
+dark mode.
+

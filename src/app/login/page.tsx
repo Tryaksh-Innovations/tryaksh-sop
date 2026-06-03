@@ -98,22 +98,25 @@ export default function LoginPage() {
               Procedure · Engineering
             </div>
             <h1 className="display text-[clamp(48px,8vw,96px)] leading-[0.95] text-ink">
-              The PCB
+              The Engineering
               <br />
-              <em className="not-italic" style={{ fontVariationSettings: '"opsz" 144, "SOFT" 100, "WONK" 1' }}>
+              <em
+                className="not-italic"
+                style={{ fontVariationSettings: '"opsz" 144, "SOFT" 100, "WONK" 1' }}
+              >
                 <span className="italic">Design</span>
               </em>{" "}
               SOP.
             </h1>
             <p className="mt-8 max-w-md font-display text-[20px] leading-snug text-ink-2">
-              The ten-stage workflow with breadboard validation —
-              parts selection, schematic lock at Stage 6, decision gate at
-              Stage 8.
+              Two workflows under one roof — the PCB ten-stage process with
+              breadboard validation, and the Mechanical eleven-stage process
+              with datum lock and first-article inspection.
             </p>
             <div className="mt-8 grid grid-cols-3 gap-6 max-w-md">
-              <Stat n="10" label="Stages" />
-              <Stat n="79" label="Checks" />
-              <Stat n="02" label="Lock gates" />
+              <Stat n="21" label="Stages" />
+              <Stat n="172" label="Checks" />
+              <Stat n="04" label="Lock gates" />
             </div>
           </div>
 
@@ -121,7 +124,7 @@ export default function LoginPage() {
             <div className="h-px bg-rule-3" />
             <div className="flex flex-wrap items-center justify-between gap-4 mono-caps text-ink-3">
               <span>Owner: CEO, Tryaksh Innovations</span>
-              <span>Tool of record: KiCad 8.x</span>
+              <span>KiCad 8.x · Fusion 360</span>
               <span>See: TRYAKSH-STD-ENG-001</span>
             </div>
           </div>

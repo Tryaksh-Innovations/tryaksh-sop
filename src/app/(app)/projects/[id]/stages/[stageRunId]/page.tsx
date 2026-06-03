@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ChecklistForm } from "@/components/stages/checklist-form";
 import {
   ApprovalPanel,
-  Stage8DecisionPanel,
+  DecisionGatePanel,
   RequestApprovalButton,
 } from "@/components/stages/approval-panel";
 import { ExternalLinksPanel } from "@/components/stages/external-links-panel";
@@ -70,8 +70,17 @@ export default async function StageWorkspacePage({
   const data = await getStageRunDetail(stageRunId).catch(() => null);
   if (!data || data.project.id !== projectId) notFound();
 
-  const { run, stage, project, designer, items, responses, links, approval } =
-    data;
+  const {
+    run,
+    stage,
+    project,
+    designer,
+    workflow,
+    items,
+    responses,
+    links,
+    approval,
+  } = data;
 
   const isDesigner = user.id === project.designerId;
   const isCeo = user.role === "ceo";
@@ -162,7 +171,7 @@ export default async function StageWorkspacePage({
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           <Link
-            href={`/handbook/stages/${stage.stageNumber}`}
+            href={`/handbook/${workflow.slug}/stages/${stage.stageNumber}`}
             className="inline-flex items-center gap-1.5 border border-rule-2 bg-paper-2 px-3 py-1.5 mono-caps text-ink-2 hover:bg-paper-3 hover:text-ink transition-colors"
           >
             <ShieldCheck className="size-3" />
@@ -183,10 +192,14 @@ export default async function StageWorkspacePage({
         <Card className="border-ink shadow-[4px_4px_0_0_var(--rule)]">
           <CardMark>§ A</CardMark>
           <CardContent className="py-6">
-            {stage.stageNumber === "8" ? (
-              <Stage8DecisionPanel
+            {stage.isDecisionGate ? (
+              <DecisionGatePanel
                 stageRunId={run.id}
                 ceoName={user.name}
+                stage={{
+                  stageNumber: stage.stageNumber,
+                  reopensToStageNumber: stage.reopensToStageNumber,
+                }}
               />
             ) : (
               <ApprovalPanel

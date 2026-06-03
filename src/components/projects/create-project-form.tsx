@@ -14,7 +14,15 @@ interface DesignerOption {
   email: string;
 }
 
+interface WorkflowOption {
+  id: string;
+  slug: string;
+  name: string;
+  version: string;
+}
+
 interface FieldErrors {
+  workflowId?: string;
   code?: string;
   name?: string;
   designClass?: string;
@@ -23,14 +31,21 @@ interface FieldErrors {
 
 export function CreateProjectForm({
   designers,
+  workflows,
 }: {
   designers: DesignerOption[];
+  workflows: WorkflowOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
+  // Default to PCB if present; otherwise the first workflow.
+  const defaultWorkflowId =
+    workflows.find((w) => w.slug === "pcb")?.id ?? workflows[0]?.id ?? "";
+
+  const [workflowId, setWorkflowId] = useState(defaultWorkflowId);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [designClass, setDesignClass] = useState<"A" | "B" | "C" | "">("");
@@ -43,6 +58,7 @@ export function CreateProjectForm({
 
     startTransition(async () => {
       const result = await createProject({
+        workflowId,
         code: code.trim().toUpperCase(),
         name: name.trim(),
         designClass: designClass || undefined,
@@ -70,8 +86,43 @@ export function CreateProjectForm({
     );
   }
 
+  if (workflows.length === 0) {
+    return (
+      <div className="border border-alert-ink/40 bg-alert-soft p-4">
+        <div className="mono-caps text-alert-ink">No active workflows</div>
+        <p className="mt-2 text-[12px] text-ink-2 leading-snug">
+          No workflows are active. Run <code className="font-mono text-[11px]">pnpm db:seed</code> to populate PCB and Mechanical.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      <div className="space-y-2">
+        <Label htmlFor="workflow">Workflow</Label>
+        <select
+          id="workflow"
+          value={workflowId}
+          onChange={(e) => setWorkflowId(e.target.value)}
+          required
+          aria-invalid={!!fieldErrors.workflowId || undefined}
+          className="flex h-9 w-full rounded-none border-0 border-b border-rule-2 bg-transparent px-0 font-sans text-[14px] text-ink focus:outline-none focus:border-ink"
+        >
+          {workflows.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name} · v{w.version}
+            </option>
+          ))}
+        </select>
+        <p className="font-mono text-[10px] text-ink-3 uppercase tracking-[0.12em]">
+          Which design discipline this project belongs to · Stages are determined by the workflow
+        </p>
+        {fieldErrors.workflowId && (
+          <p className="text-[11px] text-alert-ink">{fieldErrors.workflowId}</p>
+        )}
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="code">Project code</Label>
         <Input
@@ -123,9 +174,9 @@ export function CreateProjectForm({
           <option value="" disabled>
             Pick a class…
           </option>
-          <option value="A">A — instrument-critical (all 4 gates)</option>
-          <option value="B">B — supporting hardware (3 gates)</option>
-          <option value="C">C — internal tools/fixtures (DFM only)</option>
+          <option value="A">A — instrument-critical (all gates)</option>
+          <option value="B">B — supporting hardware</option>
+          <option value="C">C — internal tools/fixtures</option>
         </select>
         <p className="font-mono text-[10px] text-ink-3 uppercase tracking-[0.12em]">
           Engineering Standards §3 · When in doubt, classify higher

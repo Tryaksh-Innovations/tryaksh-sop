@@ -146,8 +146,15 @@ export default function DemoPage() {
 
         {/* ── § 02 — The workflow ─────────────────────────────── */}
         <section id="workflow" className="scroll-mt-20">
-          <SectionHeader num="02" icon={Workflow} title="The workflow" />
+          <SectionHeader num="02" icon={Workflow} title="The workflows" />
           <div className="space-y-8">
+            <div className="border border-rule bg-paper-2/40 px-4 py-3 text-[12px] text-ink-2 leading-snug">
+              <span className="mono-caps text-signal-ink mr-2">Multi-workflow</span>
+              The platform hosts both the PCB Design SOP (10 stages) and the
+              Mechanical Design SOP (11 stages). The same engine drives both
+              — checklists, approvals, lock gates, audit. The preview below
+              shows the PCB workflow as an example.
+            </div>
             <div className="grid md:grid-cols-[1fr_2fr] gap-8 md:gap-12">
               <div>
                 <p className="font-display text-[18px] text-ink-2 leading-snug">
