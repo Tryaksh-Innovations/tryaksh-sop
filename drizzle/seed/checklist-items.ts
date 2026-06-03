@@ -613,13 +613,15 @@ export async function seedChecklistItems(workflowId: string) {
           criterion: item.criterion,
           displayOrder: item.displayOrder,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing({
+          target: [checklistItems.stageId, checklistItems.displayOrder],
+        });
 
       totalItems++;
     }
   }
 
   logger.info(
-    `Seeded ${totalItems} checklist items across ${CHECKLIST_DATA.length} stages.`
+    `Processed ${totalItems} checklist items across ${CHECKLIST_DATA.length} stages.`
   );
 }

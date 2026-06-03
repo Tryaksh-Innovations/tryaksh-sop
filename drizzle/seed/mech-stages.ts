@@ -316,7 +316,9 @@ export async function seedMechStages(workflowId: string) {
         workflowId,
         ...stage,
       })
-      .onConflictDoNothing()
+      .onConflictDoNothing({
+        target: [workflowStages.workflowId, workflowStages.stageNumber],
+      })
       .returning();
 
     if (created) {

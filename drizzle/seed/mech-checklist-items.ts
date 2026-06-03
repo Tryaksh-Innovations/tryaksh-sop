@@ -692,7 +692,9 @@ export async function seedMechChecklistItems(workflowId: string) {
           criterion: item.criterion,
           displayOrder: item.displayOrder,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing({
+          target: [checklistItems.stageId, checklistItems.displayOrder],
+        });
 
       totalItems++;
     }

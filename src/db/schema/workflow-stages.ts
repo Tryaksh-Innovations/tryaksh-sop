@@ -6,6 +6,7 @@ import {
   integer,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { workflows } from "./workflows";
 
@@ -49,5 +50,9 @@ export const workflowStages = pgTable(
       table.workflowId,
       table.displayOrder
     ),
+    // Idempotency guard — keeps `pnpm db:seed` safe to re-run.
+    workflowStageUnique: uniqueIndex(
+      "workflow_stages_workflow_id_stage_number_unique"
+    ).on(table.workflowId, table.stageNumber),
   })
 );

@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { workflowStages } from "./workflow-stages";
 
@@ -28,5 +29,9 @@ export const checklistItems = pgTable(
   },
   (table) => ({
     stageIdIdx: index("idx_checklist_items_stage_id").on(table.stageId),
+    // Idempotency guard — keeps `pnpm db:seed` safe to re-run.
+    stageOrderUnique: uniqueIndex(
+      "checklist_items_stage_id_display_order_unique"
+    ).on(table.stageId, table.displayOrder),
   })
 );
